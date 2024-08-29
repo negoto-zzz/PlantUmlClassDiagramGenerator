@@ -334,6 +334,11 @@ public class ClassDiagramGenerator(
         var returnType = node.ReturnType.ToString();
         var args = node.ParameterList.Parameters.Select(p => $"{p.Identifier}:{p.Type}");
 
+        if (node.TypeParameterList is not null)
+        {
+            name += "<" + string.Join(", ", node.TypeParameterList.Parameters.Select(tp => tp.Identifier.Text)) + ">";
+        }
+
         WriteLine($"{modifiers}{name}({string.Join(", ", args)}) : {returnType}");
     }
 
