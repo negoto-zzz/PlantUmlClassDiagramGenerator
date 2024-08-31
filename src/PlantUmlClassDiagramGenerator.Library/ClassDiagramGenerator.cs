@@ -16,7 +16,10 @@ public class ClassDiagramGenerator(
     Accessibilities ignoreMemberAccessibilities = Accessibilities.None,
     bool createAssociation = true,
     bool attributeRequired = false,
-    bool excludeUmlBeginEndTags = false) : CSharpSyntaxWalker
+    bool excludeUmlBeginEndTags = false,
+    bool addXmlComment = false,
+    string xmlCommentReplaceFrom = null,
+    string xmlCommentReplaceTo = null) : CSharpSyntaxWalker
 {
     private readonly HashSet<string> types = [];
     private readonly List<SyntaxNode> additionalTypeDeclarationNodes = [];
@@ -28,6 +31,8 @@ public class ClassDiagramGenerator(
     private readonly bool createAssociation = createAssociation;
     private readonly bool attributeRequired = attributeRequired;
     private readonly bool excludeUmlBeginEndTags = excludeUmlBeginEndTags;
+    private readonly bool addXmlComment = addXmlComment;
+    Regex xmlCommentReplaceFromRegex = new Regex(xmlCommentReplaceFrom);
     private readonly Dictionary<string, string> escapeDictionary = new()
     {
         {@"(?<before>[^{]){(?<after>{[^{])", "${before}&#123;${after}"},
@@ -76,6 +81,12 @@ public class ClassDiagramGenerator(
         var typeParams = typeParam.TrimStart('<').TrimEnd('>').Split([','], StringSplitOptions.RemoveEmptyEntries);
         types.Add(name);
 
+        var summary = GetXmlComment(node);
+        if (!string.IsNullOrEmpty(summary))
+        {
+            type = $"\"{type}{summary}\" as {type}";
+        }
+
         var typeKeyword = (node.Kind() == SyntaxKind.RecordStructDeclaration) ? "struct" : "class";
         WriteLine($"{abstractKeyword}{typeKeyword} {type} {modifiers}<<record>> {{");
 
@@ -119,7 +130,8 @@ public class ClassDiagramGenerator(
                 ? (" = " + escapeDictionary.Aggregate(parameter.Default.Value.ToString(),
                     (n, e) => Regex.Replace(n, e.Key, e.Value)))
                 : "";
-            WriteLine($"{parameterModifiers}{parameterName} : {parameterType} {accessorStr}{initValue}");
+            var comment = GetXmlComment(node);
+            WriteLine($"{parameterModifiers}{parameterName}: {parameterType} {accessorStr}{initValue}{comment}");
         }
         else
         {
@@ -147,6 +159,12 @@ public class ClassDiagramGenerator(
 
         types.Add(name);
 
+        var summary = GetXmlComment(node);
+        if (!string.IsNullOrEmpty(summary))
+        {
+            type = $"\"{type}{summary}\" as {type}";
+        }
+
         WriteLine($"struct {type} {{");
 
         nestingDepth++;
@@ -167,6 +185,12 @@ public class ClassDiagramGenerator(
         var type = $"{node.Identifier}";
 
         types.Add(type);
+
+        var summary = GetXmlComment(node);
+        if (!string.IsNullOrEmpty(summary))
+        {
+            type = $"\"{type}{summary}\" as {type}";
+        }
 
         WriteLine($"{node.EnumKeyword} {type} {{");
 
@@ -193,9 +217,11 @@ public class ClassDiagramGenerator(
         var modifiers = GetMemberModifiersText(node.Modifiers,
             isInterfaceMember: node.Parent.IsKind(SyntaxKind.InterfaceDeclaration));
         var name = node.Identifier.ToString();
-        var args = node.ParameterList.Parameters.Select(p => $"{p.Identifier}:{p.Type}");
+        var args = node.ParameterList.Parameters.Select(p => $"{p.Identifier}: {p.Type}");
 
-        WriteLine($"{modifiers}{name}({string.Join(", ", args)})");
+        var comment = GetXmlComment(node);
+
+        WriteLine($"{modifiers}{name}({string.Join(", ", args)}){comment}");
     }
 
     public override void VisitFieldDeclaration(FieldDeclarationSyntax node)
@@ -231,7 +257,8 @@ public class ClassDiagramGenerator(
                     ? (" = " + escapeDictionary.Aggregate(field.Initializer.Value.ToString(),
                         (f, e) => Regex.Replace(f, e.Key, e.Value)))
                     : "";
-                WriteLine($"{modifiers}{field.Identifier} : {type}{initValue}");
+                var comment = GetXmlComment(node);
+                WriteLine($"{modifiers}{field.Identifier}: {type}{initValue}{comment}");
             }
             else
             {
@@ -286,7 +313,8 @@ public class ClassDiagramGenerator(
                     (n, e) => Regex.Replace(n, e.Key, e.Value)))
                 : "";
 
-            WriteLine($"{modifiers}{name} : {type} {accessorStr}{initValue}");
+            var comment = GetXmlComment(node);
+            WriteLine($"{modifiers}{name}: {type} {accessorStr}{initValue}{comment}");
         }
         else
         {
@@ -332,19 +360,23 @@ public class ClassDiagramGenerator(
                 isInterfaceMember: node.Parent.IsKind(SyntaxKind.InterfaceDeclaration));
         var name = node.Identifier.ToString();
         var returnType = node.ReturnType.ToString();
-        var args = node.ParameterList.Parameters.Select(p => $"{p.Identifier}:{p.Type}");
+        var args = node.ParameterList.Parameters.Select(p => $"{p.Identifier}: {p.Type}");
 
         if (node.TypeParameterList is not null)
         {
             name += "<" + string.Join(", ", node.TypeParameterList.Parameters.Select(tp => tp.Identifier.Text)) + ">";
         }
 
-        WriteLine($"{modifiers}{name}({string.Join(", ", args)}) : {returnType}");
+        var comment = GetXmlComment(node);
+
+        WriteLine($"{modifiers}{name}({string.Join(", ", args)}): {returnType}{comment}");
     }
 
     public override void VisitEnumMemberDeclaration(EnumMemberDeclarationSyntax node)
     {
-        WriteLine($"{node.Identifier}{node.EqualsValue},");
+        var comment = GetXmlComment(node);
+
+        WriteLine($"+ {node.Identifier} {node.EqualsValue}{comment}");
     }
 
     public override void VisitEventFieldDeclaration(EventFieldDeclarationSyntax node)
@@ -356,7 +388,8 @@ public class ClassDiagramGenerator(
         var name = string.Join(",", node.Declaration.Variables.Select(v => v.Identifier));
         var typeName = node.Declaration.Type.ToString();
 
-        WriteLine($"{modifiers} <<{node.EventKeyword}>> {name} : {typeName} ");
+        var comment = GetXmlComment(node);
+        WriteLine($"{modifiers} <<{node.EventKeyword}>> {name}: {typeName}{comment}");
     }
 
     public override void VisitGenericName(GenericNameSyntax node)
@@ -436,6 +469,12 @@ public class ClassDiagramGenerator(
         var type = $"{name}{typeParam}";
 
         types.Add(name);
+
+        if (this.addXmlComment)
+        {
+            var summary = GetXmlComment(node);
+            type = $"\"{type}{summary}\" as {type}";
+        }
 
         WriteLine($"{keyword} {type} {modifiers}{{");
 
@@ -546,5 +585,24 @@ public class ClassDiagramGenerator(
             || token.IsKind(SyntaxKind.PrivateKeyword)
             || token.IsKind(SyntaxKind.ProtectedKeyword)
             || token.IsKind(SyntaxKind.InternalKeyword));
+    }
+
+    private string GetXmlComment(SyntaxNode node)
+    {
+        if (!this.addXmlComment)
+        {
+            return string.Empty;
+        }
+
+        var comment = node.GetLeadingTrivia()
+            .Where(t => t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia))
+            .Select(t => t.GetStructure())
+            .FirstOrDefault();
+        var summary = comment?.DescendantTokens()
+                .Where(token => token.IsKind(SyntaxKind.XmlTextLiteralToken))
+                .FirstOrDefault(token => !string.IsNullOrWhiteSpace(token.ValueText))
+                .ValueText.Trim();
+        summary = xmlCommentReplaceFromRegex.Replace(summary, xmlCommentReplaceTo);
+        return summary;
     }
 }

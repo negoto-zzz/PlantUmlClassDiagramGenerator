@@ -27,7 +27,9 @@ class Program
         ["-createAssociation"] = OptionType.Switch,
         ["-allInOne"] = OptionType.Switch,
         ["-attributeRequired"] = OptionType.Switch,
-        ["-excludeUmlBeginEndTags"] = OptionType.Switch
+        ["-excludeUmlBeginEndTags"] = OptionType.Switch,
+        ["-addXmlComment"] = OptionType.Switch,
+        ["-xmlCommentReplacer"] = OptionType.Value
     };
 
     static int Main(string[] args)
@@ -85,6 +87,21 @@ class Program
             var root = tree.GetRoot();
             Accessibilities ignoreAcc = GetIgnoreAccessibilities(parameters);
 
+            string xmlCommentReplacer;
+            string xmlCommentReplaceFrom;
+            string xmlCommentReplaceTo;
+            if (parameters.TryGetValue("-xmlCommentReplacer", out xmlCommentReplacer))
+            {
+                var array = xmlCommentReplacer.Split(',', 2);
+                xmlCommentReplaceFrom = array[0];
+                xmlCommentReplaceTo = array[1];
+            }
+            else
+            {
+                xmlCommentReplaceFrom = @"^\s*([^\r\n]*)";
+                xmlCommentReplaceTo = @"\n//$1//";
+            }
+
             using var filestream = new FileStream(outputFileName, FileMode.Create, FileAccess.Write);
             using var writer = new StreamWriter(filestream);
             var gen = new ClassDiagramGenerator(
@@ -93,7 +110,10 @@ class Program
                 ignoreAcc,
                 parameters.ContainsKey("-createAssociation"),
                 parameters.ContainsKey("-attributeRequired"),
-                parameters.ContainsKey("-excludeUmlBeginEndTags"));
+                parameters.ContainsKey("-excludeUmlBeginEndTags"),
+                parameters.ContainsKey("-addXmlComment"),
+                xmlCommentReplaceFrom,
+                xmlCommentReplaceTo);
             gen.Generate(root);
         }
         catch (Exception e)
