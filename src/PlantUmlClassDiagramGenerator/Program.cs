@@ -87,20 +87,7 @@ class Program
             var root = tree.GetRoot();
             Accessibilities ignoreAcc = GetIgnoreAccessibilities(parameters);
 
-            string xmlCommentReplacer;
-            string xmlCommentReplaceFrom;
-            string xmlCommentReplaceTo;
-            if (parameters.TryGetValue("-xmlCommentReplacer", out xmlCommentReplacer))
-            {
-                var array = xmlCommentReplacer.Split(',', 2);
-                xmlCommentReplaceFrom = array[0];
-                xmlCommentReplaceTo = array[1];
-            }
-            else
-            {
-                xmlCommentReplaceFrom = @"^\s*([^\r\n]*)";
-                xmlCommentReplaceTo = @"\n//$1//";
-            }
+            (string xmlCommentReplaceFrom, string xmlCommentReplaceTo) = GetXmlCommentReplacer(parameters);
 
             using var filestream = new FileStream(outputFileName, FileMode.Create, FileAccess.Write);
             using var writer = new StreamWriter(filestream);
@@ -171,6 +158,8 @@ class Program
         var includeRefs = new StringBuilder();
         if (!excludeUmlBeginEndTags) includeRefs.AppendLine("@startuml");
 
+        (string xmlCommentReplaceFrom, string xmlCommentReplaceTo) = GetXmlCommentReplacer(parameters);
+
         var error = false;
         var filesToProcess = ExcludeFileFilter.GetFilesToProcess(files, excludePaths, inputRoot);
         foreach (var inputFile in filesToProcess)
@@ -197,7 +186,10 @@ class Program
                         ignoreAcc,
                         parameters.ContainsKey("-createAssociation"),
                         parameters.ContainsKey("-attributeRequired"),
-                        excludeUmlBeginEndTags);
+                        excludeUmlBeginEndTags,
+                        parameters.ContainsKey("-addXmlComment"),
+                        xmlCommentReplaceFrom,
+                        xmlCommentReplaceTo);
                     gen.Generate(root);
                 }
 
@@ -296,5 +288,19 @@ class Program
     private static string CombinePath(string first, string second)
     {
         return PathHelper.CombinePath(first, second);
+    }
+
+    private static (string, string) GetXmlCommentReplacer(Dictionary<string, string> parameters)
+    {
+        string xmlCommentReplacer;
+        if (parameters.TryGetValue("-xmlCommentReplacer", out xmlCommentReplacer))
+        {
+            var array = xmlCommentReplacer.Split(',', 2);
+            return (array[0], array[1]);
+        }
+        else
+        {
+            return (@"^\s*([^\r\n]*)", @"\n//$1//");
+        }
     }
 }
